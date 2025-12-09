@@ -147,19 +147,16 @@ const generateTraceIdQuery = (options: QueryBuilderOptions): string => {
     selectParts.push(getTraceDurationSelectSql(escapeIdentifier(traceDurationTime.name), timeUnit));
   }
 
-  // TODO: for tags and serviceTags, consider the column type. They might not require mapping, they could already be JSON.
+  const useJsonAttributes = options.meta?.useJsonAttributes;
+
   const traceTags = getColumnByHint(options, ColumnHint.TraceTags);
   if (traceTags !== undefined) {
-    selectParts.push(
-      `arrayMap(key -> map('key', key, 'value',${escapeIdentifier(traceTags.name)}[key]), mapKeys(${escapeIdentifier(traceTags.name)})) as tags`
-    );
+    selectParts.push(getAttributesSelectSql(escapeIdentifier(traceTags.name), traceTags.type, 'tags', useJsonAttributes));
   }
 
   const traceServiceTags = getColumnByHint(options, ColumnHint.TraceServiceTags);
   if (traceServiceTags !== undefined) {
-    selectParts.push(
-      `arrayMap(key -> map('key', key, 'value',${escapeIdentifier(traceServiceTags.name)}[key]), mapKeys(${escapeIdentifier(traceServiceTags.name)})) as serviceTags`
-    );
+    selectParts.push(getAttributesSelectSql(escapeIdentifier(traceServiceTags.name), traceServiceTags.type, 'serviceTags', useJsonAttributes));
   }
 
   const traceStatusCode = getColumnByHint(options, ColumnHint.TraceStatusCode);
@@ -173,12 +170,14 @@ const generateTraceIdQuery = (options: QueryBuilderOptions): string => {
 
   const traceEventsPrefix = options.meta?.traceEventsColumnPrefix || '';
   if (traceEventsPrefix !== '') {
+    const eventAttrsSql = getNestedAttributesSql('event.Attributes', useJsonAttributes);
+    const attrsSql = getNestedAttributesSql('attributes', useJsonAttributes);
+    
     if (flattenNested) {
       selectParts.push(
         [
           `arrayMap(event -> tuple(multiply(toFloat64(event.Timestamp), 1000),`,
-          `arrayConcat(arrayMap(key -> map('key', key, 'value', event.Attributes[key]),`,
-          `mapKeys(event.Attributes)), [map('key', 'message', 'value', event.Name)]))::Tuple(timestamp Float64, fields Array(Map(String, String))),`,
+          `arrayConcat(${eventAttrsSql}, [map('key', 'message', 'value', event.Name)]))::Tuple(timestamp Float64, fields Array(Map(String, String))),`,
           `${escapeIdentifier(traceEventsPrefix)}) as logs`,
         ].join(' ')
       );
@@ -186,8 +185,7 @@ const generateTraceIdQuery = (options: QueryBuilderOptions): string => {
       selectParts.push(
         [
           `arrayMap((name, timestamp, attributes) -> tuple(name, toString(toUnixTimestamp64Milli(timestamp)),`,
-          `arrayMap( key -> map('key', key, 'value', attributes[key]),`,
-          `mapKeys(attributes)))::Tuple(name String, timestamp String, fields Array(Map(String, String))),`,
+          `${attrsSql})::Tuple(name String, timestamp String, fields Array(Map(String, String))),`,
           `${escapeIdentifier(traceEventsPrefix)}.Name, ${escapeIdentifier(traceEventsPrefix)}.Timestamp,`,
           `${escapeIdentifier(traceEventsPrefix)}.Attributes) AS logs`,
         ].join(' ')
@@ -197,19 +195,20 @@ const generateTraceIdQuery = (options: QueryBuilderOptions): string => {
 
   const traceLinksPrefix = options.meta?.traceLinksColumnPrefix || '';
   if (traceLinksPrefix !== '') {
+    const linkAttrsSql = getNestedAttributesSql('link.Attributes', useJsonAttributes);
+    const linkAttrsSqlNonFlat = getNestedAttributesSql('attributes', useJsonAttributes);
+    
     if (flattenNested) {
       selectParts.push(
         [
-          `arrayMap(link -> tuple(link.TraceId, link.SpanId, arrayMap(key -> map('key', key, 'value', link.Attributes[key]),`,
-          `mapKeys(link.Attributes)))::Tuple(traceID String, spanID String, tags Array(Map(String, String))),`,
+          `arrayMap(link -> tuple(link.TraceId, link.SpanId, ${linkAttrsSql})::Tuple(traceID String, spanID String, tags Array(Map(String, String))),`,
           `${escapeIdentifier(traceLinksPrefix)}) AS references`,
         ].join(' ')
       );
     } else {
       selectParts.push(
         [
-          `arrayMap((traceID, spanID, attributes) -> tuple(traceID, spanID, arrayMap(key -> map('key', key, 'value', attributes[key]),`,
-          `mapKeys(attributes)))::Tuple(traceID String, spanID String, tags Array(Map(String, String))),`,
+          `arrayMap((traceID, spanID, attributes) -> tuple(traceID, spanID, ${linkAttrsSqlNonFlat})::Tuple(traceID String, spanID String, tags Array(Map(String, String))),`,
           `${escapeIdentifier(traceLinksPrefix)}.TraceId, ${escapeIdentifier(traceLinksPrefix)}.SpanId,`,
           `${escapeIdentifier(traceLinksPrefix)}.Attributes) AS references`,
         ].join(' ')
@@ -667,6 +666,38 @@ const escapeValue = (value: string): string => {
   }
 
   return `'${value}'`;
+};
+
+/**
+ * Returns the SELECT SQL for attributes columns (TraceTags/TraceServiceTags).
+ * Handles both Map and JSON column types.
+ * For Map types: uses arrayMap with mapKeys to convert to array of key/value maps
+ * For JSON types: converts JSON object keys/values to array of {key, value} maps using JSONExtractKeysAndValues
+ */
+const getAttributesSelectSql = (columnIdentifier: string, columnType: string | undefined, alias: string, useJsonAttributes?: boolean): string => {
+  const isJsonType = useJsonAttributes || columnType?.toLowerCase().startsWith('json');
+  
+  if (isJsonType) {
+    // For JSON columns stored as objects like {"key1": "value1", "key2": "value2"},
+    // extract keys and values and convert to array of maps format expected by Grafana trace panel.
+    // JSONExtractKeysAndValues returns Array(Tuple(String, String)) which we map to Array(Map(String, String))
+    return `arrayMap(x -> map('key', x.1, 'value', x.2), JSONExtractKeysAndValues(${columnIdentifier}, 'String')) as ${alias}`;
+  }
+  
+  // Default: Map type - convert to array of {key, value} maps for Grafana trace panel
+  return `arrayMap(key -> map('key', key, 'value',${columnIdentifier}[key]), mapKeys(${columnIdentifier})) as ${alias}`;
+};
+
+/**
+ * Returns the SQL fragment for converting attributes to array of key/value maps.
+ * Used within nested structures like Events and Links.
+ * @param attributesExpr - The expression to access attributes (e.g., "event.Attributes" or "attributes")
+ */
+const getNestedAttributesSql = (attributesExpr: string, useJsonAttributes?: boolean): string => {
+  if (useJsonAttributes) {
+    return `arrayMap(x -> map('key', x.1, 'value', x.2), JSONExtractKeysAndValues(${attributesExpr}, 'String'))`;
+  }
+  return `arrayMap(key -> map('key', key, 'value', ${attributesExpr}[key]), mapKeys(${attributesExpr}))`;
 };
 
 /**

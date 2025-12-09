@@ -12,6 +12,7 @@ import {
   QueryBuilderOptions,
   SelectedColumn,
   StringFilter,
+  TableColumn,
 } from 'types/queryBuilder';
 import { BuilderOptionsReducerAction, setOptions } from 'hooks/useBuilderOptionsState';
 
@@ -113,6 +114,70 @@ export const useOtelColumns = (
     );
     didSetColumns.current = true;
   }, [otelEnabled, otelVersion, builderOptionsDispatch]);
+};
+
+/**
+ * Auto-populates column types from the table schema and detects JSON attribute columns.
+ * When JSON columns are detected for TraceTags or TraceServiceTags, automatically sets useJsonAttributes.
+ */
+export const useColumnTypes = (
+  allColumns: readonly TableColumn[],
+  columns: SelectedColumn[] | undefined,
+  useJsonAttributes: boolean | undefined,
+  builderOptionsDispatch: React.Dispatch<BuilderOptionsReducerAction>
+) => {
+  const didPopulateTypes = useRef<boolean>(false);
+
+  useEffect(() => {
+    // Wait until we have both columns and schema
+    if (!columns?.length || !allColumns?.length) {
+      didPopulateTypes.current = false;
+      return;
+    }
+
+    // Check if any columns are missing types
+    const columnsNeedTypes = columns.some((c) => !c.type);
+    if (!columnsNeedTypes && didPopulateTypes.current) {
+      return;
+    }
+
+    // Populate types from schema
+    let hasChanges = false;
+    const updatedColumns = columns.map((col) => {
+      if (col.type) {
+        return col;
+      }
+      const schemaCol = allColumns.find((c) => c.name === col.name);
+      if (schemaCol?.type) {
+        hasChanges = true;
+        return { ...col, type: schemaCol.type };
+      }
+      return col;
+    });
+
+    // Auto-detect JSON attributes
+    let detectedJsonAttributes = false;
+    if (!useJsonAttributes) {
+      const tagsCol = updatedColumns.find((c) => c.hint === ColumnHint.TraceTags);
+      const serviceTagsCol = updatedColumns.find((c) => c.hint === ColumnHint.TraceServiceTags);
+      
+      detectedJsonAttributes = 
+        tagsCol?.type?.toLowerCase().startsWith('json') ||
+        serviceTagsCol?.type?.toLowerCase().startsWith('json') ||
+        false;
+    }
+
+    if (hasChanges || detectedJsonAttributes) {
+      builderOptionsDispatch(
+        setOptions({
+          columns: updatedColumns,
+          meta: detectedJsonAttributes ? { useJsonAttributes: true } : undefined,
+        })
+      );
+    }
+
+    didPopulateTypes.current = true;
+  }, [allColumns, columns, useJsonAttributes, builderOptionsDispatch]);
 };
 
 // Apply default filters on table change

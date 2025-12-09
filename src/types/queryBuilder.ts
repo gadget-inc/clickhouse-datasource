@@ -64,6 +64,13 @@ export interface QueryBuilderOptions {
     traceEventsColumnPrefix?: string;
     traceLinksColumnPrefix?: string;
 
+    /**
+     * True if trace Attributes columns (TraceTags, TraceServiceTags, and nested Events/Links Attributes)
+     * are stored as JSON instead of Map(String, String). When enabled, uses JSONExtractKeysAndValues
+     * instead of mapKeys for attribute extraction.
+     */
+    useJsonAttributes?: boolean;
+
     // Logs & Traces
     otelEnabled?: boolean;
     otelVersion?: string;
