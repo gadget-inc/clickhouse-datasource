@@ -8,10 +8,10 @@ import {
   SelectedColumn,
   StringFilter,
 } from 'types/queryBuilder';
-import { CHBuilderQuery, CHQuery, EditorType } from 'types/sql';
+import { CHBuilderQuery, CHQuery, CHSqlQuery, EditorType } from 'types/sql';
 import { Datasource } from './CHDatasource';
 import { pluginVersion } from 'utils/version';
-import { logColumnHintsToAlias, generateSql } from './sqlGenerator';
+import { logColumnHintsToAlias, generateSql, getColumnByHint, getAttributesSelectSql, escapeIdentifier } from './sqlGenerator';
 import otel from 'otel';
 
 /**
@@ -330,6 +330,68 @@ export const transformQueryResponseWithTraceAndLogLinks = (
         datasourceName: traceLogsQuery.datasource?.type!,
       },
     });
+
+    // Add "View span attributes" link to spanID field for lazy loading attributes
+    const spanField = frame.fields.find(
+      (field) => field.name.toLowerCase() === 'spanid' || field.name.toLowerCase() === 'span_id'
+    );
+    if (spanField && originalQuery.editorType === EditorType.Builder && originalQuery.builderOptions.queryType === QueryType.Traces) {
+      const { database, table } = originalQuery.builderOptions;
+      const useJsonAttributes = originalQuery.builderOptions.meta?.useJsonAttributes;
+      const spanIdColumn = getColumnByHint(originalQuery.builderOptions, ColumnHint.TraceSpanId);
+      const startTimeColumn = getColumnByHint(originalQuery.builderOptions, ColumnHint.Time);
+      const tagsColumn = getColumnByHint(originalQuery.builderOptions, ColumnHint.TraceTags);
+      const serviceTagsColumn = getColumnByHint(originalQuery.builderOptions, ColumnHint.TraceServiceTags);
+      
+      if (spanIdColumn && (tagsColumn || serviceTagsColumn)) {
+        // Build SQL to fetch span attributes using the same logic as the main query
+        const selectParts: string[] = [`${escapeIdentifier(spanIdColumn.name)} as spanID`];
+        if (tagsColumn) {
+          selectParts.push(getAttributesSelectSql(escapeIdentifier(tagsColumn.name), tagsColumn.type, 'tags', useJsonAttributes));
+        }
+        if (serviceTagsColumn) {
+          selectParts.push(getAttributesSelectSql(escapeIdentifier(serviceTagsColumn.name), serviceTagsColumn.type, 'serviceTags', useJsonAttributes));
+        }
+
+        // Build WHERE clause with time scope (±250ms) for partition pruning
+        // startTime is in milliseconds (from convertTimeFieldToMilliseconds)
+        const whereParts: string[] = [`${escapeIdentifier(spanIdColumn.name)} = '\${__value.raw}'`];
+        if (startTimeColumn) {
+          // Use the startTime field from the same row to scope the query to ±250ms
+          // fromUnixTimestamp64Milli converts milliseconds to DateTime64
+          const timeCol = escapeIdentifier(startTimeColumn.name);
+          whereParts.push(`${timeCol} >= fromUnixTimestamp64Milli(toInt64(\${__data.fields.startTime}) - 250)`);
+          whereParts.push(`${timeCol} <= fromUnixTimestamp64Milli(toInt64(\${__data.fields.startTime}) + 250)`);
+        }
+        
+        const spanAttributesQuery: CHSqlQuery = {
+          datasource: datasource,
+          editorType: EditorType.SQL,
+          rawSql: `SELECT ${selectParts.join(', ')} FROM ${escapeIdentifier(database)}.${escapeIdentifier(table)} WHERE ${whereParts.join(' AND ')} LIMIT 1`,
+          pluginVersion,
+          refId: 'Span Attributes',
+          queryType: QueryType.Table,
+          format: mapQueryTypeToGrafanaFormat(QueryType.Table), // 1 = Table visualization
+        };
+
+        if (!spanField.config) {
+          spanField.config = {};
+        }
+        if (!spanField.config.links) {
+          spanField.config.links = [];
+        }
+        spanField.config.links.push({
+          title: '🔍 View span attributes',
+          targetBlank: openInNewWindow,
+          url: '',
+          internal: {
+            query: spanAttributesQuery,
+            datasourceUid: spanAttributesQuery.datasource?.uid!,
+            datasourceName: spanAttributesQuery.datasource?.type!,
+          },
+        });
+      }
+    }
   });
 
   return res;

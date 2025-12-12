@@ -148,15 +148,19 @@ const generateTraceIdQuery = (options: QueryBuilderOptions): string => {
   }
 
   const useJsonAttributes = options.meta?.useJsonAttributes;
+  const skipTraceAttributes = options.meta?.skipTraceAttributes;
 
-  const traceTags = getColumnByHint(options, ColumnHint.TraceTags);
-  if (traceTags !== undefined) {
-    selectParts.push(getAttributesSelectSql(escapeIdentifier(traceTags.name), traceTags.type, 'tags', useJsonAttributes));
-  }
+  // Skip expensive attribute columns when skipTraceAttributes is enabled (for performance)
+  if (!skipTraceAttributes) {
+    const traceTags = getColumnByHint(options, ColumnHint.TraceTags);
+    if (traceTags !== undefined) {
+      selectParts.push(getAttributesSelectSql(escapeIdentifier(traceTags.name), traceTags.type, 'tags', useJsonAttributes));
+    }
 
-  const traceServiceTags = getColumnByHint(options, ColumnHint.TraceServiceTags);
-  if (traceServiceTags !== undefined) {
-    selectParts.push(getAttributesSelectSql(escapeIdentifier(traceServiceTags.name), traceServiceTags.type, 'serviceTags', useJsonAttributes));
+    const traceServiceTags = getColumnByHint(options, ColumnHint.TraceServiceTags);
+    if (traceServiceTags !== undefined) {
+      selectParts.push(getAttributesSelectSql(escapeIdentifier(traceServiceTags.name), traceServiceTags.type, 'serviceTags', useJsonAttributes));
+    }
   }
 
   const traceStatusCode = getColumnByHint(options, ColumnHint.TraceStatusCode);
@@ -168,51 +172,54 @@ const generateTraceIdQuery = (options: QueryBuilderOptions): string => {
 
   const flattenNested = Boolean(options.meta?.flattenNested);
 
-  const traceEventsPrefix = options.meta?.traceEventsColumnPrefix || '';
-  if (traceEventsPrefix !== '') {
-    const eventAttrsSql = getNestedAttributesSql('event.Attributes', useJsonAttributes);
-    const attrsSql = getNestedAttributesSql('attributes', useJsonAttributes);
-    
-    if (flattenNested) {
-      selectParts.push(
-        [
-          `arrayMap(event -> tuple(multiply(toFloat64(event.Timestamp), 1000),`,
-          `arrayConcat(${eventAttrsSql}, [map('key', 'message', 'value', event.Name)]))::Tuple(timestamp Float64, fields Array(Map(String, String))),`,
-          `${escapeIdentifier(traceEventsPrefix)}) as logs`,
-        ].join(' ')
-      );
-    } else {
-      selectParts.push(
-        [
-          `arrayMap((name, timestamp, attributes) -> tuple(name, toString(toUnixTimestamp64Milli(timestamp)),`,
-          `${attrsSql})::Tuple(name String, timestamp String, fields Array(Map(String, String))),`,
-          `${escapeIdentifier(traceEventsPrefix)}.Name, ${escapeIdentifier(traceEventsPrefix)}.Timestamp,`,
-          `${escapeIdentifier(traceEventsPrefix)}.Attributes) AS logs`,
-        ].join(' ')
-      );
+  // Skip Events and Links when skipTraceAttributes is enabled (they contain nested attributes)
+  if (!skipTraceAttributes) {
+    const traceEventsPrefix = options.meta?.traceEventsColumnPrefix || '';
+    if (traceEventsPrefix !== '') {
+      const eventAttrsSql = getNestedAttributesSql('event.Attributes', useJsonAttributes);
+      const attrsSql = getNestedAttributesSql('attributes', useJsonAttributes);
+      
+      if (flattenNested) {
+        selectParts.push(
+          [
+            `arrayMap(event -> tuple(multiply(toFloat64(event.Timestamp), 1000),`,
+            `arrayConcat(${eventAttrsSql}, [map('key', 'message', 'value', event.Name)]))::Tuple(timestamp Float64, fields Array(Map(String, String))),`,
+            `${escapeIdentifier(traceEventsPrefix)}) as logs`,
+          ].join(' ')
+        );
+      } else {
+        selectParts.push(
+          [
+            `arrayMap((name, timestamp, attributes) -> tuple(name, toString(toUnixTimestamp64Milli(timestamp)),`,
+            `${attrsSql})::Tuple(name String, timestamp String, fields Array(Map(String, String))),`,
+            `${escapeIdentifier(traceEventsPrefix)}.Name, ${escapeIdentifier(traceEventsPrefix)}.Timestamp,`,
+            `${escapeIdentifier(traceEventsPrefix)}.Attributes) AS logs`,
+          ].join(' ')
+        );
+      }
     }
-  }
 
-  const traceLinksPrefix = options.meta?.traceLinksColumnPrefix || '';
-  if (traceLinksPrefix !== '') {
-    const linkAttrsSql = getNestedAttributesSql('link.Attributes', useJsonAttributes);
-    const linkAttrsSqlNonFlat = getNestedAttributesSql('attributes', useJsonAttributes);
-    
-    if (flattenNested) {
-      selectParts.push(
-        [
-          `arrayMap(link -> tuple(link.TraceId, link.SpanId, ${linkAttrsSql})::Tuple(traceID String, spanID String, tags Array(Map(String, String))),`,
-          `${escapeIdentifier(traceLinksPrefix)}) AS references`,
-        ].join(' ')
-      );
-    } else {
-      selectParts.push(
-        [
-          `arrayMap((traceID, spanID, attributes) -> tuple(traceID, spanID, ${linkAttrsSqlNonFlat})::Tuple(traceID String, spanID String, tags Array(Map(String, String))),`,
-          `${escapeIdentifier(traceLinksPrefix)}.TraceId, ${escapeIdentifier(traceLinksPrefix)}.SpanId,`,
-          `${escapeIdentifier(traceLinksPrefix)}.Attributes) AS references`,
-        ].join(' ')
-      );
+    const traceLinksPrefix = options.meta?.traceLinksColumnPrefix || '';
+    if (traceLinksPrefix !== '') {
+      const linkAttrsSql = getNestedAttributesSql('link.Attributes', useJsonAttributes);
+      const linkAttrsSqlNonFlat = getNestedAttributesSql('attributes', useJsonAttributes);
+      
+      if (flattenNested) {
+        selectParts.push(
+          [
+            `arrayMap(link -> tuple(link.TraceId, link.SpanId, ${linkAttrsSql})::Tuple(traceID String, spanID String, tags Array(Map(String, String))),`,
+            `${escapeIdentifier(traceLinksPrefix)}) AS references`,
+          ].join(' ')
+        );
+      } else {
+        selectParts.push(
+          [
+            `arrayMap((traceID, spanID, attributes) -> tuple(traceID, spanID, ${linkAttrsSqlNonFlat})::Tuple(traceID String, spanID String, tags Array(Map(String, String))),`,
+            `${escapeIdentifier(traceLinksPrefix)}.TraceId, ${escapeIdentifier(traceLinksPrefix)}.SpanId,`,
+            `${escapeIdentifier(traceLinksPrefix)}.Attributes) AS references`,
+          ].join(' ')
+        );
+      }
     }
   }
 
@@ -656,7 +663,7 @@ const getTableIdentifier = (database: string, table: string): string => {
   return `${escapeIdentifier(database)}${sep}${escapeIdentifier(table)}`;
 };
 
-const escapeIdentifier = (id: string): string => {
+export const escapeIdentifier = (id: string): string => {
   return id ? `"${id}"` : '';
 };
 
@@ -672,16 +679,15 @@ const escapeValue = (value: string): string => {
  * Returns the SELECT SQL for attributes columns (TraceTags/TraceServiceTags).
  * Handles both Map and JSON column types.
  * For Map types: uses arrayMap with mapKeys to convert to array of key/value maps
- * For JSON types: converts JSON object keys/values to array of {key, value} maps using JSONExtractKeysAndValues
+ * For JSON types: return the JSON column as is
  */
-const getAttributesSelectSql = (columnIdentifier: string, columnType: string | undefined, alias: string, useJsonAttributes?: boolean): string => {
+export const getAttributesSelectSql = (columnIdentifier: string, columnType: string | undefined, alias: string, useJsonAttributes?: boolean): string => {
   const isJsonType = useJsonAttributes || columnType?.toLowerCase().startsWith('json');
   
   if (isJsonType) {
-    // For JSON columns stored as objects like {"key1": "value1", "key2": "value2"},
-    // extract keys and values and convert to array of maps format expected by Grafana trace panel.
-    // JSONExtractKeysAndValues returns Array(Tuple(String, String)) which we map to Array(Map(String, String))
-    return `arrayMap(x -> map('key', x.1, 'value', x.2), JSONExtractKeysAndValues(${columnIdentifier}, 'String')) as ${alias}`;
+    // For native JSON columns (ClickHouse 25.x+), convert to string first then extract keys/values.
+    // Native JSON can be used directly in Grafana.
+    return `toString(${columnIdentifier}) as ${alias}`;
   }
   
   // Default: Map type - convert to array of {key, value} maps for Grafana trace panel
@@ -695,7 +701,8 @@ const getAttributesSelectSql = (columnIdentifier: string, columnType: string | u
  */
 const getNestedAttributesSql = (attributesExpr: string, useJsonAttributes?: boolean): string => {
   if (useJsonAttributes) {
-    return `arrayMap(x -> map('key', x.1, 'value', x.2), JSONExtractKeysAndValues(${attributesExpr}, 'String'))`;
+    // For native JSON columns (ClickHouse 25.x+), convert to string first then extract keys/values
+    return `toString(${attributesExpr})`;
   }
   return `arrayMap(key -> map('key', key, 'value', ${attributesExpr}[key]), mapKeys(${attributesExpr}))`;
 };

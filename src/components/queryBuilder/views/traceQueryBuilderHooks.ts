@@ -156,7 +156,7 @@ export const useColumnTypes = (
     });
 
     // Auto-detect JSON attributes
-    let detectedJsonAttributes = false;
+    let detectedJsonAttributes = true;
     if (!useJsonAttributes) {
       const tagsCol = updatedColumns.find((c) => c.hint === ColumnHint.TraceTags);
       const serviceTagsCol = updatedColumns.find((c) => c.hint === ColumnHint.TraceServiceTags);
@@ -164,7 +164,7 @@ export const useColumnTypes = (
       detectedJsonAttributes = 
         tagsCol?.type?.toLowerCase().startsWith('json') ||
         serviceTagsCol?.type?.toLowerCase().startsWith('json') ||
-        false;
+        detectedJsonAttributes;
     }
 
     if (hasChanges || detectedJsonAttributes) {

@@ -218,6 +218,10 @@ export default {
             label: 'Use Flatten Nested',
             tooltip: 'Enable if your traces table was created with flatten_nested=1',
           },
+          skipTraceAttributes: {
+            label: 'Skip Attributes',
+            tooltip: 'Skip loading trace attributes (tags, serviceTags, logs, references) for faster queries. Useful when attributes are stored in expensive column types like native JSON.',
+          },
           eventsPrefix: {
             label: 'Events prefix',
             tooltip: 'Prefix for the events column (Events.Timestamp, Events.Name, etc.)',
@@ -471,6 +475,10 @@ export default {
         flattenNested: {
           label: 'Use Flatten Nested',
           tooltip: 'Enable if your traces table was created with flatten_nested=1',
+        },
+        skipTraceAttributes: {
+          label: 'Skip Attributes',
+          tooltip: 'Skip loading trace attributes (tags, serviceTags, logs, references) for faster queries. Useful when attributes are stored in expensive column types like native JSON.',
         },
         eventsPrefix: {
           label: 'Events Prefix',

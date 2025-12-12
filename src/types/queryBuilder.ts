@@ -71,6 +71,12 @@ export interface QueryBuilderOptions {
      */
     useJsonAttributes?: boolean;
 
+    /**
+     * When true, skips loading trace attributes (tags, serviceTags, logs, references) in trace ID queries.
+     * Useful for performance when attributes are stored in expensive column types like native JSON.
+     */
+    skipTraceAttributes?: boolean;
+
     // Logs & Traces
     otelEnabled?: boolean;
     otelVersion?: string;
