@@ -19,4 +19,4 @@ datasources:
       port: 9000
       protocol: native
     secureJsonData:
-      # password: ""
+      password: ""

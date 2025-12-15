@@ -13,7 +13,7 @@ import useColumns from 'hooks/useColumns';
 import { BuilderOptionsReducerAction, setOptions, setOtelEnabled, setOtelVersion } from 'hooks/useBuilderOptionsState';
 import useIsNewQuery from 'hooks/useIsNewQuery';
 import { OtelVersionSelect } from '../OtelVersionSelect';
-import { useDefaultFilters, useOtelColumns, useTraceDefaultsOnMount } from './traceQueryBuilderHooks';
+import { useColumnTypes, useDefaultFilters, useOtelColumns, useTraceDefaultsOnMount } from './traceQueryBuilderHooks';
 import TraceIdInput from '../TraceIdInput';
 import { OrderByEditor, getOrderByOptions } from '../OrderByEditor';
 import { LimitEditor } from '../LimitEditor';
@@ -49,6 +49,7 @@ interface TraceQueryBuilderState {
   flattenNested?: boolean;
   traceEventsColumnPrefix?: string;
   traceLinksColumnPrefix?: string;
+  skipTraceAttributes?: boolean;
   traceId: string;
   orderBy: OrderBy[];
   limit: number;
@@ -94,6 +95,7 @@ export const TraceQueryBuilder = (props: TraceQueryBuilderProps) => {
       flattenNested: Boolean(builderOptions.meta?.flattenNested),
       traceEventsColumnPrefix: builderOptions.meta?.traceEventsColumnPrefix || '',
       traceLinksColumnPrefix: builderOptions.meta?.traceLinksColumnPrefix || '',
+      skipTraceAttributes: Boolean(builderOptions.meta?.skipTraceAttributes),
       traceId: builderOptions.meta?.traceId || '',
       orderBy: builderOptions.orderBy || [],
       limit: builderOptions.limit || 0,
@@ -135,6 +137,7 @@ export const TraceQueryBuilder = (props: TraceQueryBuilderProps) => {
           flattenNested: next.flattenNested,
           traceEventsColumnPrefix: next.traceEventsColumnPrefix,
           traceLinksColumnPrefix: next.traceLinksColumnPrefix,
+          skipTraceAttributes: next.skipTraceAttributes,
         },
       })
     );
@@ -143,6 +146,7 @@ export const TraceQueryBuilder = (props: TraceQueryBuilderProps) => {
   useTraceDefaultsOnMount(datasource, isNewQuery, builderOptions, builderOptionsDispatch);
   useOtelColumns(builderState.otelEnabled, builderState.otelVersion, builderOptionsDispatch);
   useDefaultFilters(builderOptions.table, builderState.isTraceIdMode, isNewQuery, builderOptionsDispatch);
+  useColumnTypes(allColumns, builderOptions.columns, builderOptions.meta?.useJsonAttributes, builderOptionsDispatch);
 
   const configWarning = showConfigWarning && (
     <Alert title="" severity="warning" buttonContent="Close" onRemove={() => setConfigWarningOpen(false)}>
@@ -381,6 +385,15 @@ export const TraceQueryBuilder = (props: TraceQueryBuilderProps) => {
             tooltip={labels.columns.flattenNested.tooltip}
             value={Boolean(builderState.flattenNested)}
             onChange={onOptionChange('flattenNested')}
+            wide
+          />
+        </div>
+        <div className="gf-form">
+          <Switch
+            label={labels.columns.skipTraceAttributes.label}
+            tooltip={labels.columns.skipTraceAttributes.tooltip}
+            value={Boolean(builderState.skipTraceAttributes)}
+            onChange={onOptionChange('skipTraceAttributes')}
             wide
           />
         </div>
