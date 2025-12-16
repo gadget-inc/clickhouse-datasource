@@ -1,0 +1,114 @@
+name: Build and Release Plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to build from
+        default: main
+      version:
+        description: Version tag (e.g., v1.0.0). Leave empty to use run number
+        required: false
+        type: string
+      create-release:
+        description: Create a GitHub release
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Plugin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || 'main' }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Install Mage
+        run: |
+          go install github.com/magefile/mage@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: Build backend
+        run: mage build:backend
+
+      - name: Verify build artifacts
+        run: |
+          echo "Checking dist folder contents:"
+          ls -lah dist/
+          echo ""
+          echo "Checking for required files:"
+          test -f dist/plugin.json && echo "✓ plugin.json exists" || echo "✗ plugin.json missing"
+          test -f dist/module.js && echo "✓ module.js exists" || echo "✗ module.js missing"
+          test -f dist/gpx_clickhouse_linux_amd64 && echo "✓ Linux AMD64 binary exists" || echo "✗ Linux AMD64 binary missing"
+
+      - name: Create release archive
+        run: |
+          cd dist
+          zip -r ../grafana-clickhouse-datasource.zip .
+          cd ..
+          ls -lh grafana-clickhouse-datasource.zip
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-dist
+          path: |
+            dist/
+            grafana-clickhouse-datasource.zip
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: ${{ github.event.inputs.create-release == 'true' }}
+        uses: softprops/action-gh-release@v1
+        with:
+          files: grafana-clickhouse-datasource.zip
+          tag_name: ${{ github.event.inputs.version || format('v{0}-build-{1}', github.event.inputs.branch || 'main', github.run_number) }}
+          name: Release ${{ github.event.inputs.version || format('{0}-build-{1}', github.event.inputs.branch || 'main', github.run_number) }}
+          body: |
+            ## ClickHouse Datasource Plugin Build
+            
+            **Branch:** ${{ github.event.inputs.branch || 'main' }}
+            **Commit:** ${{ github.sha }}
+            **Build Number:** ${{ github.run_number }}
+            
+            ### Installation Instructions
+            
+            1. Download the `grafana-clickhouse-datasource.zip` file
+            2. Extract it to your Grafana plugins directory:
+               ```bash
+               unzip grafana-clickhouse-datasource.zip -d /var/lib/grafana/plugins/grafana-clickhouse-datasource/
+               ```
+            3. Restart Grafana
+            
+            **Note:** You may need to allow unsigned plugins in your `grafana.ini`:
+            ```ini
+            [plugins]
+            allow_loading_unsigned_plugins = grafana-clickhouse-datasource
+            ```
+          draft: false
+          prerelease: false
+

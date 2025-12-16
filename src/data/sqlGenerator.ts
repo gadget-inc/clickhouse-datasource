@@ -687,7 +687,7 @@ export const getAttributesSelectSql = (columnIdentifier: string, columnType: str
   if (isJsonType) {
     // For native JSON columns (ClickHouse 25.x+), convert to string first then extract keys/values.
     // Native JSON can be used directly in Grafana.
-    return `toString(${columnIdentifier}) as ${alias}`;
+    return `arrayMap(tuple -> map('key', tuple.1, 'value', toString(tuple.2)), JSONExtractKeysAndValuesRaw(toString(${columnIdentifier}))) as ${alias}`;
   }
   
   // Default: Map type - convert to array of {key, value} maps for Grafana trace panel

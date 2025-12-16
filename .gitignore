@@ -26,6 +26,7 @@ work/
 ci/
 e2e-results/
 test_summary.json
+grafana-clickhouse-datasource.zip
 
 # Editor
 .idea
@@ -39,3 +40,4 @@ pkg/__debug_bin
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
