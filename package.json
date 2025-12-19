@@ -1,7 +1,7 @@
 {
-  "name": "clickhouse-datasource",
+  "name": "gadget-clickhouse-datasource",
   "version": "4.11.4",
-  "description": "Clickhouse Datasource",
+  "description": "Gadget Clickhouse Datasource",
   "engines": {
     "node": ">=20"
   },
