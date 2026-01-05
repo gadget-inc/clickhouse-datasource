@@ -1,5 +1,5 @@
 {
-  "name": "gadget-clickhouse-datasource",
+  "name": "grafana-clickhouse-datasource",
   "version": "4.11.4",
   "description": "Gadget Clickhouse Datasource",
   "engines": {
