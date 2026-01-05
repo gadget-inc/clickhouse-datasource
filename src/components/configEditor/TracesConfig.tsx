@@ -36,6 +36,7 @@ export interface TraceConfigProps {
   onFlattenNestedChange: (v: boolean) => void;
   onEventsColumnPrefixChange: (v: string) => void;
   onLinksColumnPrefixChange: (v: string) => void;
+  onUseJsonAttributesChange: (v: boolean) => void;
 }
 
 export const TracesConfig = (props: TraceConfigProps) => {
@@ -63,6 +64,7 @@ export const TracesConfig = (props: TraceConfigProps) => {
     onFlattenNestedChange,
     onEventsColumnPrefixChange,
     onLinksColumnPrefixChange,
+    onUseJsonAttributesChange,
   } = props;
   let {
     defaultDatabase,
@@ -88,6 +90,7 @@ export const TracesConfig = (props: TraceConfigProps) => {
     flattenNested,
     traceEventsColumnPrefix,
     traceLinksColumnPrefix,
+    useJsonAttributes,
   } = (props.tracesConfig || {}) as CHTracesConfig;
   const labels = allLabels.components.Config.TracesConfig;
 
@@ -278,6 +281,13 @@ export const TracesConfig = (props: TraceConfigProps) => {
           tooltip={labels.columns.flattenNested.tooltip}
           value={flattenNested || false}
           onChange={onFlattenNestedChange}
+          wide
+        />
+        <Switch
+          label={labels.columns.useJsonAttributes.label}
+          tooltip={labels.columns.useJsonAttributes.tooltip}
+          value={useJsonAttributes || false}
+          onChange={onUseJsonAttributesChange}
           wide
         />
         <LabeledInput

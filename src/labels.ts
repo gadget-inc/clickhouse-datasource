@@ -218,6 +218,10 @@ export default {
             label: 'Use Flatten Nested',
             tooltip: 'Enable if your traces table was created with flatten_nested=1',
           },
+          useJsonAttributes: {
+            label: 'Use JSON Attributes',
+            tooltip: 'Enable if trace attributes (tags, serviceTags, and nested Events/Links Attributes) are stored as JSON instead of Map(String, String)',
+          },
           skipTraceAttributes: {
             label: 'Skip Attributes',
             tooltip: 'Skip loading trace attributes (tags, serviceTags, logs, references) for faster queries. Useful when attributes are stored in expensive column types like native JSON.',

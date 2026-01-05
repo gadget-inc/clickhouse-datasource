@@ -107,6 +107,7 @@ export interface CHTracesConfig {
   flattenNested?: boolean;
   traceEventsColumnPrefix?: string;
   traceLinksColumnPrefix?: string;
+  useJsonAttributes?: boolean;
 }
 
 export interface AliasTableEntry {

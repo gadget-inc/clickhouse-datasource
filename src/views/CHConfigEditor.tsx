@@ -606,6 +606,10 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = (props) => {
             trackingV1.trackClickhouseConfigV1TracesConfig({ traceLinksColumnPrefix: c });
             onTracesConfigChange('traceLinksColumnPrefix', c);
           }}
+          onUseJsonAttributesChange={(c) => {
+            trackingV1.trackClickhouseConfigV1TracesConfig({ useJsonAttributes: c });
+            onTracesConfigChange('useJsonAttributes', c);
+          }}
         />
 
         <Divider />

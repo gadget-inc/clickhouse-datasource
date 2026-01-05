@@ -92,6 +92,7 @@ export const trackClickhouseConfigV1TracesConfig = (props: {
   flattenNested?: boolean;
   traceEventsColumnPrefix?: string;
   traceLinksColumnPrefix?: string;
+  useJsonAttributes?: boolean;
 }) => {
   reportInteraction('clickhouse_config_v1_traces_config', props);
 };

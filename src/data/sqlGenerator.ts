@@ -200,7 +200,7 @@ const generateTraceIdQuery = (options: QueryBuilderOptions): string => {
     }
 
     const traceLinksPrefix = options.meta?.traceLinksColumnPrefix || '';
-    if (traceLinksPrefix !== '') {
+    if (traceLinksPrefix !== '') {  
       const linkAttrsSql = getNestedAttributesSql('link.Attributes', useJsonAttributes);
       const linkAttrsSqlNonFlat = getNestedAttributesSql('attributes', useJsonAttributes);
       
@@ -702,9 +702,9 @@ export const getAttributesSelectSql = (columnIdentifier: string, columnType: str
 const getNestedAttributesSql = (attributesExpr: string, useJsonAttributes?: boolean): string => {
   if (useJsonAttributes) {
     // For native JSON columns (ClickHouse 25.x+), convert to string first then extract keys/values
-    return `toString(${attributesExpr})`;
+    return `arrayMap(tuple -> map('key', tuple.1, 'value', tuple.2), JSONExtractKeysAndValuesRaw(toJSONString(${attributesExpr})))`;
   }
-  return `arrayMap(key -> map('key', key, 'value', ${attributesExpr}[key]), mapKeys(${attributesExpr}))`;
+  return `arrayMap(key -> map('key', key, 'value', ${attributesExpr}[key] ), mapKeys(${attributesExpr}))`;
 };
 
 /**
