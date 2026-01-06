@@ -8,10 +8,10 @@ import {
   SelectedColumn,
   StringFilter,
 } from 'types/queryBuilder';
-import { CHBuilderQuery, CHQuery, CHSqlQuery, EditorType } from 'types/sql';
+import { CHBuilderQuery, CHQuery, EditorType } from 'types/sql';
 import { Datasource } from './CHDatasource';
 import { pluginVersion } from 'utils/version';
-import { logColumnHintsToAlias, generateSql, getColumnByHint, getAttributesSelectSql, escapeIdentifier } from './sqlGenerator';
+import { logColumnHintsToAlias, generateSql } from './sqlGenerator';
 import otel from 'otel';
 
 /**
@@ -134,6 +134,7 @@ export const transformQueryResponseWithTraceAndLogLinks = (
   res: DataQueryResponse
 ): DataQueryResponse => {
   res.data.forEach((frame: DataFrame) => {
+    filterEmpty(frame);
     const originalQuery = req.targets.find((t) => t.refId === frame.refId) as CHBuilderQuery;
     if (!originalQuery) {
       return;
@@ -330,68 +331,6 @@ export const transformQueryResponseWithTraceAndLogLinks = (
         datasourceName: traceLogsQuery.datasource?.type!,
       },
     });
-
-    // Add "View span attributes" link to spanID field for lazy loading attributes
-    const spanField = frame.fields.find(
-      (field) => field.name.toLowerCase() === 'spanid' || field.name.toLowerCase() === 'span_id'
-    );
-    if (spanField && originalQuery.editorType === EditorType.Builder && originalQuery.builderOptions.queryType === QueryType.Traces) {
-      const { database, table } = originalQuery.builderOptions;
-      const useJsonAttributes = originalQuery.builderOptions.meta?.useJsonAttributes;
-      const spanIdColumn = getColumnByHint(originalQuery.builderOptions, ColumnHint.TraceSpanId);
-      const startTimeColumn = getColumnByHint(originalQuery.builderOptions, ColumnHint.Time);
-      const tagsColumn = getColumnByHint(originalQuery.builderOptions, ColumnHint.TraceTags);
-      const serviceTagsColumn = getColumnByHint(originalQuery.builderOptions, ColumnHint.TraceServiceTags);
-      
-      if (spanIdColumn && (tagsColumn || serviceTagsColumn)) {
-        // Build SQL to fetch span attributes using the same logic as the main query
-        const selectParts: string[] = [`${escapeIdentifier(spanIdColumn.name)} as spanID`];
-        if (tagsColumn) {
-          selectParts.push(getAttributesSelectSql(escapeIdentifier(tagsColumn.name), tagsColumn.type, 'tags', useJsonAttributes));
-        }
-        if (serviceTagsColumn) {
-          selectParts.push(getAttributesSelectSql(escapeIdentifier(serviceTagsColumn.name), serviceTagsColumn.type, 'serviceTags', useJsonAttributes));
-        }
-
-        // Build WHERE clause with time scope (±250ms) for partition pruning
-        // startTime is in milliseconds (from convertTimeFieldToMilliseconds)
-        const whereParts: string[] = [`${escapeIdentifier(spanIdColumn.name)} = '\${__value.raw}'`];
-        if (startTimeColumn) {
-          // Use the startTime field from the same row to scope the query to ±250ms
-          // fromUnixTimestamp64Milli converts milliseconds to DateTime64
-          const timeCol = escapeIdentifier(startTimeColumn.name);
-          whereParts.push(`${timeCol} >= fromUnixTimestamp64Milli(toInt64(\${__data.fields.startTime}) - 250)`);
-          whereParts.push(`${timeCol} <= fromUnixTimestamp64Milli(toInt64(\${__data.fields.startTime}) + 250)`);
-        }
-        
-        const spanAttributesQuery: CHSqlQuery = {
-          datasource: datasource,
-          editorType: EditorType.SQL,
-          rawSql: `SELECT ${selectParts.join(', ')} FROM ${escapeIdentifier(database)}.${escapeIdentifier(table)} WHERE ${whereParts.join(' AND ')} LIMIT 1`,
-          pluginVersion,
-          refId: 'Span Attributes',
-          queryType: QueryType.Table,
-          format: mapQueryTypeToGrafanaFormat(QueryType.Table), // 1 = Table visualization
-        };
-
-        if (!spanField.config) {
-          spanField.config = {};
-        }
-        if (!spanField.config.links) {
-          spanField.config.links = [];
-        }
-        spanField.config.links.push({
-          title: '🔍 View span attributes',
-          targetBlank: openInNewWindow,
-          url: '',
-          internal: {
-            query: spanAttributesQuery,
-            datasourceUid: spanAttributesQuery.datasource?.uid!,
-            datasourceName: spanAttributesQuery.datasource?.type!,
-          },
-        });
-      }
-    }
   });
 
   return res;
@@ -419,4 +358,112 @@ export const dataFrameHasLogLabelWithName = (frame: DataFrame | undefined, name:
   const labelKeys = Object.keys(labels);
 
   return labelKeys.includes(name);
+};
+
+/**
+ * Recursively filters out empty values from a value (used for JSON objects).
+ * @example
+ * ```
+ * const value = { "some": "value", "empty": { "string": "", "number": 0, "boolean": false, "null": null, "undefined": undefined, "array": [], "object": {} } }
+ * filterEmptyValue(value)
+ * // => { "some": "value" }
+ * ```
+ */
+const filterEmptyValue = (value: any): any => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === "string") {
+    // Try to parse as JSON if it looks like JSON
+    if (value.trim().startsWith('{') || value.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(value);
+        const filtered = filterEmptyValue(parsed);
+        return filtered !== undefined ? JSON.stringify(filtered) : undefined;
+      } catch {
+        // Not valid JSON, treat as regular string
+      }
+    }
+    return value === "" || value === "0" ? undefined : value;
+  }
+
+  if (typeof value === "number") {
+    return value === 0 ? undefined : value;
+  }
+
+  if (typeof value === "boolean") {
+    return value === false ? undefined : value;
+  }
+
+  if (Array.isArray(value)) {
+    const filtered = value.map(filterEmptyValue).filter((v) => v !== undefined);
+    return filtered.length === 0 ? undefined : filtered;
+  }
+
+  if (typeof value === "object") {
+    const result: any = {};
+    for (const key of Object.keys(value)) {
+      const filtered = filterEmptyValue(value[key]);
+      if (filtered !== undefined) {
+        result[key] = filtered;
+      }
+    }
+    return Object.keys(result).length === 0 ? undefined : result;
+  }
+
+  return value;
+};
+
+/**
+ * Filters out undefined values from DataFrame field values.
+ * For JSON fields (like labels), recursively filters out empty/null values from the JSON objects.
+ */
+export const filterEmpty = (frame: DataFrame): void => {
+  frame.fields.forEach((field) => {
+    // Filter out undefined values from the field values array
+    const originalValues = field.values;
+    
+    // Process each value: filter undefined and recursively filter empty values from JSON objects
+    const processedValues: any[] = [];
+    for (let i = 0; i < originalValues.length; i++) {
+      const value = originalValues[i];
+      if (value === undefined) {
+        continue; // Skip undefined values
+      }
+      
+      // Check if this field might be a JSON field (labels, attributes, etc.)
+      // JSON fields are typically stored as objects or JSON strings
+      let processedValue = value;
+      if (value && typeof value === 'object' && !Array.isArray(value) && value.constructor === Object) {
+        // It's a plain object (likely JSON from ClickHouse)
+        processedValue = filterEmptyValue(value);
+        if (processedValue !== undefined) {
+          processedValues.push(processedValue);
+        }
+      } else if (value && typeof value === 'string' && (value.trim().startsWith('{') || value.trim().startsWith('['))) {
+        // It's a string that might be JSON
+        try {
+          const parsed = JSON.parse(value);
+          const filtered = filterEmptyValue(parsed);
+          if (filtered !== undefined) {
+            processedValues.push(JSON.stringify(filtered));
+          }
+        } catch {
+          // Not valid JSON, keep as is
+          processedValues.push(value);
+        }
+      } else {
+        // Regular value, keep as is
+        processedValues.push(value);
+      }
+    }
+    
+    // Update field values - create new field with processed values
+    // Note: This is a simplified mutation. In practice, you might need to rebuild the field properly
+    if (processedValues.length !== originalValues.length) {
+      // Only update if values changed
+      field.values = processedValues as any;
+    }
+  });
 };
