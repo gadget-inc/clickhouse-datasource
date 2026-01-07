@@ -31,6 +31,7 @@ function defaultTraceConfigProps(): TraceConfigProps {
     onFlattenNestedChange: () => {},
     onEventsColumnPrefixChange: () => {},
     onLinksColumnPrefixChange: () => {},
+    onUseJsonAttributesChange: () => {},
   };
 }
 

@@ -410,6 +410,8 @@ export default {
         label: 'Level Filter',
         tooltip: 'Applies a filter to the log level',
       },
+      filterEmptyFieldsLabel: 'Filter Empty Fields',
+      filterEmptyFieldsTooltip: 'Remove empty/null values from query results, including nested JSON fields',
     },
     TimeSeriesQueryBuilder: {
       simpleQueryModeLabel: 'Simple',
@@ -426,12 +428,16 @@ export default {
       aggregateQueryModeLabel: 'Aggregate',
       builderModeLabel: 'Builder Mode',
       builderModeTooltip: 'Switches the query builder between the simple and aggregate modes',
+      filterEmptyFieldsLabel: 'Filter Empty Fields',
+      filterEmptyFieldsTooltip: 'Remove empty/null values from query results, including nested JSON fields',
     },
     TraceQueryBuilder: {
       traceIdModeLabel: 'Trace ID',
       traceSearchModeLabel: 'Trace Search',
       traceModeLabel: 'Trace Mode',
       traceModeTooltip: 'Switches between trace ID and trace search mode',
+      filterEmptyFieldsLabel: 'Filter Empty Fields',
+      filterEmptyFieldsTooltip: 'Remove empty/null values from query results, including nested JSON fields',
       columnsSection: 'Columns',
       filtersSection: 'Filters',
 

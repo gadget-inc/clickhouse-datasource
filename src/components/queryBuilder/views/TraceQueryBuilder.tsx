@@ -431,6 +431,38 @@ export const TraceQueryBuilder = (props: TraceQueryBuilderProps) => {
           database={builderOptions.database}
           table={builderOptions.table}
         />
+        <Switch
+          label={labels.filterEmptyFieldsLabel}
+          tooltip={labels.filterEmptyFieldsTooltip}
+          value={builderOptions.meta?.filterEmptyFields || true}
+          onChange={(value) =>
+            builderOptionsDispatch(
+              setOptions({
+                meta: {
+                  ...builderOptions.meta,
+                  filterEmptyFields: value,
+                },
+              })
+            )
+          }
+          wide
+        />
+        <Switch
+          label={labels.filterEmptyFieldsLabel}
+          tooltip={labels.filterEmptyFieldsTooltip}
+          value={builderOptions.meta?.filterEmptyFields || true}
+          onChange={(value) =>
+            builderOptionsDispatch(
+              setOptions({
+                meta: {
+                  ...builderOptions.meta,
+                  filterEmptyFields: value,
+                },
+              })
+            )
+          }
+          wide
+        />
       </Collapse>
       {builderState.isTraceIdMode && (
         <TraceIdInput traceId={builderState.traceId} onChange={onOptionChange('traceId')} />

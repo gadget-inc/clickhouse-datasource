@@ -134,8 +134,11 @@ export const transformQueryResponseWithTraceAndLogLinks = (
   res: DataQueryResponse
 ): DataQueryResponse => {
   res.data.forEach((frame: DataFrame) => {
-    filterEmpty(frame);
     const originalQuery = req.targets.find((t) => t.refId === frame.refId) as CHBuilderQuery;
+    // Only filter empty fields if the option is enabled
+    if (originalQuery?.builderOptions?.meta?.filterEmptyFields ?? true) {
+      filterEmpty(frame);
+    }
     if (!originalQuery) {
       return;
     }
@@ -370,6 +373,8 @@ export const dataFrameHasLogLabelWithName = (frame: DataFrame | undefined, name:
  * ```
  */
 const filterEmptyValue = (value: any): any => {
+  console.log('filterEmptyValue', value);
+  console.log('filterEmptyValue typeof', typeof value);
   if (value === null || value === undefined) {
     return undefined;
   }
@@ -402,6 +407,7 @@ const filterEmptyValue = (value: any): any => {
   }
 
   if (typeof value === "object") {
+    console.log('filterEmptyValue object', value);
     const result: any = {};
     for (const key of Object.keys(value)) {
       const filtered = filterEmptyValue(value[key]);
@@ -409,6 +415,7 @@ const filterEmptyValue = (value: any): any => {
         result[key] = filtered;
       }
     }
+    console.log('filterEmptyValue result', result);
     return Object.keys(result).length === 0 ? undefined : result;
   }
 
@@ -459,11 +466,8 @@ export const filterEmpty = (frame: DataFrame): void => {
       }
     }
     
-    // Update field values - create new field with processed values
-    // Note: This is a simplified mutation. In practice, you might need to rebuild the field properly
-    if (processedValues.length !== originalValues.length) {
-      // Only update if values changed
-      field.values = processedValues as any;
-    }
+    // Always update field values with processed values
+    // This handles both removed values AND modified JSON content
+    field.values = processedValues as any;
   });
 };
