@@ -372,6 +372,24 @@ export const dataFrameHasLogLabelWithName = (frame: DataFrame | undefined, name:
  * // => { "some": "value" }
  * ```
  */
+/**
+ * Check if a string represents an epoch/null timestamp (around 1970-01-01 00:00:00 UTC)
+ * This handles various timezone representations like "1969-12-31T19:00:00-05:00"
+ */
+const isEpochTimestamp = (value: string): boolean => {
+  // Quick check for common epoch date patterns before expensive Date parsing
+  if (!value.match(/^19(69-12-31|70-01-01)/)) {
+    return false;
+  }
+  try {
+    const date = new Date(value);
+    // Check if the timestamp is within 24 hours of epoch (to handle timezone variations)
+    return !isNaN(date.getTime()) && Math.abs(date.getTime()) < 86400000;
+  } catch {
+    return false;
+  }
+};
+
 const filterEmptyValue = (value: any): any => {
   console.log('filterEmptyValue', value);
   console.log('filterEmptyValue typeof', typeof value);
@@ -390,7 +408,11 @@ const filterEmptyValue = (value: any): any => {
         // Not valid JSON, treat as regular string
       }
     }
-    return value === "" || value === "0" ? undefined : value;
+    // Filter empty strings, "0", and epoch timestamps
+    if (value === "" || value === "0" || isEpochTimestamp(value)) {
+      return undefined;
+    }
+    return value;
   }
 
   if (typeof value === "number") {
