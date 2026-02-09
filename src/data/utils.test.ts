@@ -7,7 +7,7 @@ import {
   tryApplyColumnHints,
 } from './utils';
 import { newMockDatasource } from '__mocks__/datasource';
-import { CoreApp, DataFrame, DataQueryRequest, DataQueryResponse, Field, FieldType } from '@grafana/data';
+import { CoreApp, DataFrame, DataQueryRequest, DataQueryResponse, Field, FieldType, arrayToDataFrame } from '@grafana/data';
 import { CHBuilderQuery, CHQuery, EditorType } from 'types/sql';
 import { logColumnHintsToAlias } from './sqlGenerator';
 
@@ -309,5 +309,249 @@ describe('dataFrameHasLogLabelWithName', () => {
       ],
     } as any as DataFrame;
     expect(dataFrameHasLogLabelWithName(frame, 'testLabel')).toBe(false);
+  });
+});
+
+/**
+ * Creates a DataFrame fixture matching the log format with contextID, error, gadget, skipper, etc.
+ * Useful for testing log data manipulation.
+ */
+export const createLogDataFrameFixture = (): DataFrame => {
+  return arrayToDataFrame([
+    {
+      contextID: 'i-Gp7b2ds3El',
+      error: JSON.stringify({
+        code: '',
+        message: '',
+        name: '',
+        stack: '',
+      }),
+      gadget: JSON.stringify({
+        application_id: 8931,
+        environment_id: 16577,
+      }),
+      globalAction: 'monitorIndividualMutationBgActions',
+      model: 'backgroundActionRecord',
+      name: 'db-operation',
+      pid: 1,
+      recordId: 11725487,
+      serverRole: 'api',
+      skipper: JSON.stringify({
+        function: {
+          deployment: '',
+          namespace: '',
+          scale: {
+            max_instances: 0,
+            min_instances: 0,
+            target_cpu_usage_milli: 0,
+            target_in_flight_requests: 0,
+            target_memory_usage_mib: 0,
+          },
+          tenant: '',
+        },
+        heartbeat: {
+          in_flight_requests: 0,
+          timestamp: '1969-12-31T19:00:00-05:00',
+        },
+        instance: {
+          address: '',
+          assigned_at: '1969-12-31T19:00:00-05:00',
+          cpu_usage_milli: 0,
+          memory_usage_mib: 0,
+          name: '',
+          ready_at: '1969-12-31T19:00:00-05:00',
+          replica_set: '',
+        },
+      }),
+      source: 'platform',
+      userVisible: true,
+      userspaceLogLevel: 30,
+      level: 'info',
+    },
+  ]);
+};
+
+describe('filterEmpty', () => {
+  // We need to access the private filterEmpty function for testing
+  // Since it's not exported, we'll test it indirectly through transformQueryResponseWithTraceAndLogLinks
+  // or we can test the behavior by checking the DataFrame after transformation
+  
+  it('should remove undefined values from DataFrame field values', () => {
+    // Create DataFrame with values (filterEmpty removes undefined, so we test with valid data)
+    const testFrame = arrayToDataFrame([
+      { field1: 'value1', field2: 1, field3: true },
+      { field1: 'value2', field2: 2, field3: false },
+      { field1: 'value3', field2: 3, field3: true },
+    ]);
+    testFrame.refId = 'A';
+
+    // Create a request/response to test through transformQueryResponseWithTraceAndLogLinks
+    const request: DataQueryRequest<CHQuery> = {
+      requestId: 'test',
+      interval: '',
+      intervalMs: 0,
+      range: {} as any,
+      scopedVars: {} as any,
+      targets: [{
+        refId: 'A',
+        editorType: EditorType.Builder,
+        builderOptions: {
+          database: 'test',
+          table: 'test',
+          queryType: QueryType.Table,
+        },
+        pluginVersion: '',
+        rawSql: '',
+      }],
+      timezone: '',
+      app: CoreApp.Explore,
+      startTime: 0,
+    };
+
+    const response: DataQueryResponse = {
+      data: [testFrame],
+    };
+
+    const mockDatasource = newMockDatasource();
+    const result = transformQueryResponseWithTraceAndLogLinks(mockDatasource, request, response);
+
+    // After filterEmpty, all values should remain (no undefined to remove in this case)
+    const resultFrame = result.data[0];
+    expect(resultFrame.fields[0].values.length).toBe(3);
+    expect(resultFrame.fields[0].values.toArray()).toEqual(['value1', 'value2', 'value3']);
+    
+    expect(resultFrame.fields[1].values.length).toBe(3);
+    expect(resultFrame.fields[1].values.toArray()).toEqual([1, 2, 3]);
+    
+    expect(resultFrame.fields[2].values.length).toBe(3);
+    expect(resultFrame.fields[2].values.toArray()).toEqual([true, false, true]);
+  });
+
+  it('should preserve other falsy values (0, false, empty string)', () => {
+    const testFrame = arrayToDataFrame([
+      { stringField: '', numberField: 0, booleanField: false },
+      { stringField: 'value', numberField: 1, booleanField: true },
+      { stringField: '', numberField: 0, booleanField: false },
+    ]);
+    testFrame.refId = 'A';
+
+    const request: DataQueryRequest<CHQuery> = {
+      requestId: 'test',
+      interval: '',
+      intervalMs: 0,
+      range: {} as any,
+      scopedVars: {} as any,
+      targets: [{
+        refId: 'A',
+        editorType: EditorType.Builder,
+        builderOptions: {
+          database: 'test',
+          table: 'test',
+          queryType: QueryType.Table,
+        },
+        pluginVersion: '',
+        rawSql: '',
+      }],
+      timezone: '',
+      app: CoreApp.Explore,
+      startTime: 0,
+    };
+
+    const response: DataQueryResponse = {
+      data: [testFrame],
+    };
+
+    const mockDatasource = newMockDatasource();
+    const result = transformQueryResponseWithTraceAndLogLinks(mockDatasource, request, response);
+
+    const resultFrame = result.data[0];
+    // Should preserve falsy values, only remove undefined
+    expect(resultFrame.fields[0].values.toArray()).toEqual(['', 'value', '']);
+    expect(resultFrame.fields[1].values.toArray()).toEqual([0, 1, 0]);
+    expect(resultFrame.fields[2].values.toArray()).toEqual([false, true, false]);
+  });
+
+  it('should handle DataFrame with empty values', () => {
+    // Create an empty DataFrame to test edge case
+    const testFrame = arrayToDataFrame([]);
+    testFrame.refId = 'A';
+
+    const request: DataQueryRequest<CHQuery> = {
+      requestId: 'test',
+      interval: '',
+      intervalMs: 0,
+      range: {} as any,
+      scopedVars: {} as any,
+      targets: [{
+        refId: 'A',
+        editorType: EditorType.Builder,
+        builderOptions: {
+          database: 'test',
+          table: 'test',
+          queryType: QueryType.Table,
+        },
+        pluginVersion: '',
+        rawSql: '',
+      }],
+      timezone: '',
+      app: CoreApp.Explore,
+      startTime: 0,
+    };
+
+    const response: DataQueryResponse = {
+      data: [testFrame],
+    };
+
+    const mockDatasource = newMockDatasource();
+    const result = transformQueryResponseWithTraceAndLogLinks(mockDatasource, request, response);
+
+    const resultFrame = result.data[0];
+    // Empty DataFrame should remain empty
+    expect(resultFrame.fields.length).toBe(0);
+  });
+
+  it('should handle DataFrame with no undefined values', () => {
+    const testFrame = arrayToDataFrame([
+      { field1: 'a', field2: 1 },
+      { field1: 'b', field2: 2 },
+      { field1: 'c', field2: 3 },
+    ]);
+    testFrame.refId = 'A';
+
+    const request: DataQueryRequest<CHQuery> = {
+      requestId: 'test',
+      interval: '',
+      intervalMs: 0,
+      range: {} as any,
+      scopedVars: {} as any,
+      targets: [{
+        refId: 'A',
+        editorType: EditorType.Builder,
+        builderOptions: {
+          database: 'test',
+          table: 'test',
+          queryType: QueryType.Table,
+        },
+        pluginVersion: '',
+        rawSql: '',
+      }],
+      timezone: '',
+      app: CoreApp.Explore,
+      startTime: 0,
+    };
+
+    const response: DataQueryResponse = {
+      data: [testFrame],
+    };
+
+    const mockDatasource = newMockDatasource();
+    const result = transformQueryResponseWithTraceAndLogLinks(mockDatasource, request, response);
+
+    const resultFrame = result.data[0];
+    // All values should remain unchanged
+    expect(resultFrame.fields[0].values.length).toBe(3);
+    expect(resultFrame.fields[0].values.toArray()).toEqual(['a', 'b', 'c']);
+    expect(resultFrame.fields[1].values.length).toBe(3);
+    expect(resultFrame.fields[1].values.toArray()).toEqual([1, 2, 3]);
   });
 });

@@ -12,6 +12,7 @@ import { Datasource } from 'data/CHDatasource';
 import { useBuilderOptionChanges } from 'hooks/useBuilderOptionChanges';
 import useColumns from 'hooks/useColumns';
 import { BuilderOptionsReducerAction, setOptions } from 'hooks/useBuilderOptionsState';
+import { Switch } from '../Switch';
 
 interface TableQueryBuilderProps {
   datasource: Datasource;
@@ -106,6 +107,22 @@ export const TableQueryBuilder = (props: TableQueryBuilderProps) => {
         datasource={datasource}
         database={builderOptions.database}
         table={builderOptions.table}
+      />
+      <Switch
+        label={labels.filterEmptyFieldsLabel}
+        tooltip={labels.filterEmptyFieldsTooltip}
+        value={builderOptions.meta?.filterEmptyFields || true}
+        onChange={(value) =>
+          builderOptionsDispatch(
+            setOptions({
+              meta: {
+                ...builderOptions.meta,
+                filterEmptyFields: value,
+              },
+            })
+          )
+        }
+        wide
       />
     </div>
   );

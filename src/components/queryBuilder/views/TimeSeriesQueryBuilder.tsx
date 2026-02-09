@@ -147,6 +147,22 @@ export const TimeSeriesQueryBuilder = (props: TimeSeriesQueryBuilderProps) => {
         database={builderOptions.database}
         table={builderOptions.table}
       />
+      {/* <Switch
+        label={labels.filterEmptyFieldsLabel}
+        tooltip={labels.filterEmptyFieldsTooltip}
+        value={builderOptions.meta?.filterEmptyFields || true}
+        onChange={(value) =>
+          builderOptionsDispatch(
+            setOptions({
+              meta: {
+                ...builderOptions.meta,
+                filterEmptyFields: value,
+              },
+            })
+          )
+        }
+        wide
+      /> */}
     </div>
   );
 };

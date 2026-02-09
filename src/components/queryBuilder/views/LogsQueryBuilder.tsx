@@ -23,6 +23,7 @@ import {
 } from './logsQueryBuilderHooks';
 import { styles } from 'styles';
 import { Components as allSelectors } from 'selectors';
+import { Switch } from '../Switch';
 
 interface LogsQueryBuilderProps {
   datasource: Datasource;
@@ -221,6 +222,22 @@ export const LogsQueryBuilder = (props: LogsQueryBuilderProps) => {
         table={builderOptions.table}
       />
       <LogMessageLikeInput logMessageLike={builderState.logMessageLike} onChange={onOptionChange('logMessageLike')} />
+      <Switch
+        label={labels.filterEmptyFieldsLabel}
+        tooltip={labels.filterEmptyFieldsTooltip}
+        value={builderOptions.meta?.filterEmptyFields || true}
+        onChange={(value) =>
+          builderOptionsDispatch(
+            setOptions({
+              meta: {
+                ...builderOptions.meta,
+                filterEmptyFields: value,
+              },
+            })
+          )
+        }
+        wide
+      />
     </div>
   );
 };

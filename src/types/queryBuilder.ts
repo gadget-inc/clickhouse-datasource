@@ -80,6 +80,12 @@ export interface QueryBuilderOptions {
     // Logs & Traces
     otelEnabled?: boolean;
     otelVersion?: string;
+
+    /**
+     * When true, filters out empty/null values from query results.
+     * Applies to all field types, including JSON fields (like labels).
+     */
+    filterEmptyFields?: boolean;
   };
 }
 
